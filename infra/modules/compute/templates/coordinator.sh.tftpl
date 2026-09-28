@@ -1,0 +1,32 @@
+#!/bin/bash
+# user_data del coordinador (dmp). Generado por Terraform (templatefile).
+set -euxo pipefail
+
+dnf update -y
+dnf install -y git
+
+# Python 3.12 vía uv (no viene en el repo de AL2023 por defecto).
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+/usr/local/bin/uv python install 3.12
+
+# Variables de entorno que consume el código del coordinador.
+cat >/etc/dmp.env <<EOF
+ROLE=coordinator
+AWS_REGION=${aws_region}
+QUEUE_URLS='${queue_urls_json}'
+TABLE_CASES=${table_cases}
+TABLE_SUBTASKS=${table_subtasks}
+TABLE_WORKERS=${table_workers}
+DATASET_BUCKET=${dataset_bucket}
+RESULTS_BUCKET=${results_bucket}
+API_PORT=${api_port}
+ORIGIN_VERIFY_SECRET=${origin_verify_secret}
+EOF
+chmod 600 /etc/dmp.env
+
+# TODO: acá va el despliegue de la aplicación (fuera del alcance de esta
+# infraestructura todavía):
+#   1. git clone <repo> /opt/dmp
+#   2. uv sync --project /opt/dmp/coordinator
+#   3. crear /etc/systemd/system/dmp-coordinator.service (EnvironmentFile=/etc/dmp.env)
+#   4. systemctl enable --now dmp-coordinator

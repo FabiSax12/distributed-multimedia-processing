@@ -1,0 +1,42 @@
+#!/bin/bash
+# user_data de los workers (dmp), pool = ${pool}. Generado por Terraform
+# (templatefile).
+set -euxo pipefail
+
+dnf update -y
+dnf install -y git tar
+
+# Python 3.12 vía uv.
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+/usr/local/bin/uv python install 3.12
+
+%{ if install_ffmpeg ~}
+# ffmpeg estático (solo pools video y audio; metadatos no lo necesita).
+curl -LsS https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o /tmp/ffmpeg.tar.xz
+mkdir -p /opt/ffmpeg
+tar -xf /tmp/ffmpeg.tar.xz -C /opt/ffmpeg --strip-components=1
+ln -sf /opt/ffmpeg/ffmpeg /usr/local/bin/ffmpeg
+ln -sf /opt/ffmpeg/ffprobe /usr/local/bin/ffprobe
+rm -f /tmp/ffmpeg.tar.xz
+%{ endif ~}
+
+# Variables de entorno que consume el código del worker.
+cat >/etc/dmp.env <<EOF
+ROLE=worker
+POOL=${pool}
+AWS_REGION=${aws_region}
+QUEUE_URLS='${queue_urls_json}'
+TABLE_CASES=${table_cases}
+TABLE_SUBTASKS=${table_subtasks}
+TABLE_WORKERS=${table_workers}
+DATASET_BUCKET=${dataset_bucket}
+RESULTS_BUCKET=${results_bucket}
+EOF
+chmod 600 /etc/dmp.env
+
+# TODO: acá va el despliegue de la aplicación (fuera del alcance de esta
+# infraestructura todavía):
+#   1. git clone <repo> /opt/dmp
+#   2. uv sync --project /opt/dmp/workers
+#   3. crear /etc/systemd/system/dmp-worker-${pool}.service (EnvironmentFile=/etc/dmp.env)
+#   4. systemctl enable --now dmp-worker-${pool}
