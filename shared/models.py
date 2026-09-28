@@ -14,7 +14,7 @@ Atributos del barrier en Cases que NO están en el modelo:
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, TypeVar
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,8 +34,6 @@ WORKER_DEAD_AFTER_S = 15
 # Conversión Pydantic <-> DynamoDB (boto3 resource usa Decimal, no float)
 # --------------------------------------------------------------------------- #
 
-M = TypeVar("M", bound=BaseModel)
-
 
 def _floats_to_decimal(value: Any) -> Any:
     if isinstance(value, float):
@@ -52,7 +50,7 @@ def to_item(model: BaseModel) -> dict[str, Any]:
     return _floats_to_decimal(model.model_dump(mode="json", exclude_none=True))
 
 
-def from_item(cls: type[M], item: dict[str, Any]) -> M:
+def from_item[M: BaseModel](cls: type[M], item: dict[str, Any]) -> M:
     return cls.model_validate(item)
 
 
@@ -269,3 +267,8 @@ def report_key(case_id: str) -> str:
 def load_samples_key(day: str) -> str:
     """day en formato YYYY-MM-DD."""
     return f"metrics/{day}.jsonl"
+
+
+def load_samples_chunk_key(ts: datetime) -> str:
+    """Clave por chunk de minuto, para flushear métricas sin reescribir todo el día."""
+    return f"metrics/{ts:%Y-%m-%d}/{ts:%H-%M}.jsonl"

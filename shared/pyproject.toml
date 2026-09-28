@@ -1,0 +1,21 @@
+[project]
+name = "shared"
+version = "0.1.0"
+description = "Contratos de dominio compartidos: routing, estados, mensajes SQS, modelos de DynamoDB/S3 y contratos REST."
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.7"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Layout plano: este directorio (shared/) ES la raíz del paquete "shared", los
+# módulos (routing.py, messages.py, ...) están al mismo nivel que este
+# pyproject.toml, no en un subdirectorio shared/shared/. `sources` le dice a
+# hatchling que anteponga el prefijo "shared" a todo lo que incluya, en vez de
+# buscar un subdirectorio con ese nombre.
+[tool.hatch.build.targets.wheel]
+include = ["*.py"]
+
+[tool.hatch.build.targets.wheel.sources]
+"" = "shared"

@@ -19,9 +19,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .messages import utcnow
-from .models import CaseItem, CaseSource, SubTaskItem, WorkerItem
+from .models import CaseItem, CaseSource, LoadSample, SubTaskItem, WorkerItem
 from .routing import MediaType, Operation, Priority
-
 
 # ---- Dataset y subida manual ---------------------------------------------- #
 
@@ -100,8 +99,25 @@ class CaseSummary(BaseModel):
     by_status: dict[str, int]         # {"pending": 3, "running": 2, ...}
 
 
+class Alert(BaseModel):
+    """Alerta operativa (p. ej. caso estancado, cola desbordada) para el panel."""
+
+    level: str  # "info" | "warning" | "critical"
+    pool: str  # pool afectado, o "-" si no aplica a un pool en particular
+    message: str
+    ts: datetime = Field(default_factory=utcnow)
+
+
 class StateResponse(BaseModel):
     generated_at: datetime = Field(default_factory=utcnow)
     cases: list[CaseSummary]
     workers: list[WorkerView]
     queues: list[QueueDepth]
+    alerts: list[Alert] = Field(default_factory=list)
+
+
+# ---- Métricas ----------------------------------------------------------------- #
+
+
+class MetricsResponse(BaseModel):
+    samples: list[LoadSample]
