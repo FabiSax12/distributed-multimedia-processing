@@ -1,5 +1,11 @@
+# Python
+__pycache__/
+
 # Variables de entorno locales generadas por infra/envs/dev (local_sensitive_file).
 .env.local
+
+# direnv: fija el profile de AWS de este proyecto, es local a cada máquina.
+.envrc
 
 # Terraform
 **/.terraform/
