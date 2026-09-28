@@ -1,0 +1,15 @@
+# Variables de entorno locales generadas por infra/envs/dev (local_sensitive_file).
+.env.local
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
