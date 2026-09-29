@@ -125,3 +125,19 @@ def media(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     )  # fmt: skip
     files["corrupt"].write_bytes(b"esto no es un video")
     return files
+
+
+def make_task(operation: str, media_type: str, **params: Any):
+    """SubTaskMessage mínimo para ejercitar una operación o el runner."""
+    from shared.messages import SubTaskMessage
+
+    return SubTaskMessage(
+        subtask_id="st-1",
+        case_id="case-1",
+        input_key=f"uploads/u1/entrada.{params.pop('ext', 'bin')}",
+        media_type=media_type,
+        operation=operation,
+        priority="normal",
+        output_prefix="results/case-1/st-1/",
+        params=params,
+    )
