@@ -13,7 +13,8 @@ worker real por pool, y manda un caso heterogéneo generado con ffmpeg:
 - un .txt (el coordinador lo marca unsupported_format sin encolarlo).
 
 Espera que el caso cierre como `partially_completed`, que el reporte exista en
-S3 y que los tres pools aparezcan en `workers_used`.
+S3, que los tres pools aparezcan en `workers_used` y que `WS /api/ws` empuje
+el cierre del caso.
 
 lyrics y el catálogo de metadata salen a internet (lyrics.ovh, MusicBrainz);
 sin red, esas sub-tareas fallan con external_api_error y el caso igual cierra.
@@ -37,12 +38,15 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
 import boto3
 import httpx
 from moto.server import ThreadedMotoServer
+from websockets.exceptions import ConnectionClosed
+from websockets.sync.client import connect
 
 from shared.routing import ALL_WORK_QUEUES, DLQ, RESULTS_QUEUE, Pool
 
@@ -50,8 +54,12 @@ MOTO_PORT = 5055
 API_PORT = 8765
 API = f"http://127.0.0.1:{API_PORT}"
 REGION = "us-east-1"
-DATASET_BUCKET = "dmp-local-dataset"
-RESULTS_BUCKET = "dmp-local-results"
+# Sufijo por corrida: Floci guarda estado entre corridas y así cada una arranca
+# con colas, tablas y buckets vacíos.
+RUN = f"{int(time.time()) % 1_000_000:06d}"
+DATASET_BUCKET = f"dmp-local-dataset-{RUN}"
+RESULTS_BUCKET = f"dmp-local-results-{RUN}"
+TABLES = {name: f"{name}-{RUN}" for name in ("Cases", "SubTasks", "Workers")}
 PREFIX = "e2e/"
 CASE_TIMEOUT_S = 240
 
@@ -70,9 +78,9 @@ def _env(endpoint: str) -> dict[str, str]:
         "AWS_SECRET_ACCESS_KEY": "testing",
         "AWS_REGION": REGION,
         "AWS_DEFAULT_REGION": REGION,
-        "TABLE_CASES": "Cases",
-        "TABLE_SUBTASKS": "SubTasks",
-        "TABLE_WORKERS": "Workers",
+        "TABLE_CASES": TABLES["Cases"],
+        "TABLE_SUBTASKS": TABLES["SubTasks"],
+        "TABLE_WORKERS": TABLES["Workers"],
         "DATASET_BUCKET": DATASET_BUCKET,
         "RESULTS_BUCKET": RESULTS_BUCKET,
         "API_PORT": str(API_PORT),
@@ -90,12 +98,12 @@ def create_resources(env: dict[str, str]) -> dict[str, str]:
     dynamodb = session.client("dynamodb", endpoint_url=endpoint)
     s3 = session.client("s3", endpoint_url=endpoint)
 
-    urls = {DLQ: sqs.create_queue(QueueName=DLQ)["QueueUrl"]}
+    urls = {DLQ: sqs.create_queue(QueueName=f"{DLQ}-{RUN}")["QueueUrl"]}
     dlq_arn = sqs.get_queue_attributes(QueueUrl=urls[DLQ], AttributeNames=["QueueArn"])[
         "Attributes"
     ]["QueueArn"]
     urls[RESULTS_QUEUE] = sqs.create_queue(
-        QueueName=RESULTS_QUEUE, Attributes={"VisibilityTimeout": "60"}
+        QueueName=f"{RESULTS_QUEUE}-{RUN}", Attributes={"VisibilityTimeout": "60"}
     )["QueueUrl"]
     redrive = json.dumps(
         {"deadLetterTargetArn": dlq_arn, "maxReceiveCount": MAX_RECEIVE_COUNT}
@@ -103,7 +111,7 @@ def create_resources(env: dict[str, str]) -> dict[str, str]:
     for name in ALL_WORK_QUEUES:
         visibility = VISIBILITY_TIMEOUTS[name.split("-")[0]]
         urls[name] = sqs.create_queue(
-            QueueName=name,
+            QueueName=f"{name}-{RUN}",
             Attributes={"VisibilityTimeout": str(visibility), "RedrivePolicy": redrive},
         )["QueueUrl"]
 
@@ -113,7 +121,7 @@ def create_resources(env: dict[str, str]) -> dict[str, str]:
         ("Workers", ["worker_id"]),
     ):
         dynamodb.create_table(
-            TableName=table,
+            TableName=TABLES[table],
             KeySchema=[
                 {"AttributeName": k, "KeyType": t}
                 for k, t in zip(keys, ("HASH", "RANGE"), strict=False)
@@ -178,6 +186,35 @@ def wait_healthy(proc: subprocess.Popen, log: Path) -> None:
     sys.exit("el coordinador no respondió /healthz en 60 s")
 
 
+class StateListener(threading.Thread):
+    """Escucha `WS /api/ws` mientras corre el caso: el panel ve lo mismo."""
+
+    def __init__(self) -> None:
+        super().__init__(daemon=True)
+        self.states: list[dict] = []
+        self.stop = threading.Event()
+
+    def run(self) -> None:
+        with connect(f"ws://127.0.0.1:{API_PORT}/api/ws") as ws:
+            while not self.stop.is_set():
+                try:
+                    message = json.loads(ws.recv(timeout=1))
+                except TimeoutError:
+                    continue
+                except ConnectionClosed:
+                    return  # el coordinador se apagó al final de la corrida
+                if message.get("type") == "state":
+                    self.states.append(message["data"])
+
+    def case_statuses(self, case_id: str) -> list[str]:
+        return [
+            summary["case"]["status"]
+            for state in list(self.states)
+            for summary in state["cases"]
+            if summary["case"]["case_id"] == case_id
+        ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -233,6 +270,9 @@ def main() -> None:
             )
         print("workers: video, audio, metadatos")
 
+        listener = StateListener()
+        listener.start()
+
         song = f"{PREFIX}Queen - Bohemian Rhapsody.mp3"
         body = {
             "label": "e2e local",
@@ -283,11 +323,25 @@ def main() -> None:
         alive = sorted(w["worker_id"] for w in state["workers"] if w["alive"])
         print(f"workers vivos en /api/state: {alive}")
 
+        # El snapshot sale cada 2 s: el cierre llega por el WebSocket poco después.
+        ws_deadline = time.monotonic() + 15
+        while status not in listener.case_statuses(case_id):
+            if time.monotonic() > ws_deadline:
+                break
+            time.sleep(0.5)
+        listener.stop.set()
+        ws_statuses = listener.case_statuses(case_id)
+        print(
+            f"WebSocket /api/ws: {len(listener.states)} estados recibidos, "
+            f"el caso pasó por {sorted(set(ws_statuses))}"
+        )
+
         pools_used = {w.split("-")[0] for w in report["workers_used"]}
         assert status == "partially_completed", status
         assert pools_used == {p.value for p in Pool}, pools_used
         assert len(alive) == 3, alive
-        print("\nOK: el caso cerró por el barrier con los tres pools.")
+        assert status in ws_statuses, ws_statuses
+        print("\nOK: el caso cerró con los tres pools y el WebSocket lo empujó.")
     except BaseException:
         for log in sorted(tmp.glob("*.log")):
             print(f"\n--- {log.name} (últimas líneas) ---\n{log.read_text()[-2500:]}")

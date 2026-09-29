@@ -126,7 +126,8 @@ uv run --all-packages python workers/scripts/local_e2e.py
 Levanta moto en proceso con las mismas colas, tablas y buckets que Terraform,
 el coordinador real y un worker por pool. Después manda un caso con un video,
 una canción, una imagen, un `.mp4` corrupto y un `.txt`, y verifica que
-cierre como `partially_completed` con los tres pools en el reporte. Necesita
+cierre como `partially_completed` con los tres pools en el reporte y que
+`WS /api/ws` empuje el cierre. Necesita
 ffmpeg en PATH.
 
 Con Floci (emulador de AWS en Docker) en vez de moto:
