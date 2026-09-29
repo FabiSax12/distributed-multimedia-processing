@@ -1,0 +1,43 @@
+# Unidad systemd del coordinador. Se instala en la EC2 como
+# /etc/systemd/system/dmp-coordinator.service (el nombre `dmp-coordinator`
+# sigue la convención que ya dejaron los TODO de
+# infra/modules/compute/templates/coordinator.sh.tftpl:
+#   systemctl enable --now dmp-coordinator
+#
+# Instalación (vía SSM Session Manager, sin SSH — ver coordinator/README.md):
+#   sudo git clone <repo> /opt/dmp
+#   cd /opt/dmp && uv sync --package coordinator
+#   sudo cp deploy/coordinator.service /etc/systemd/system/dmp-coordinator.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now dmp-coordinator
+#
+# El `user_data` de Terraform ya deja /etc/dmp.env con las variables
+# (AWS_REGION, QUEUE_URLS, TABLE_*, DATASET_BUCKET, RESULTS_BUCKET, API_PORT,
+# ORIGIN_VERIFY_SECRET) — ver infra/modules/compute/templates/coordinator.sh.tftpl.
+
+[Unit]
+Description=Coordinador del pipeline de procesamiento multimedia distribuido (dmp)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/dmp
+EnvironmentFile=/etc/dmp.env
+# --workers 1: un solo proceso uvicorn, concurrencia vía hilos dentro del
+# proceso (ver el docstring de concurrencia en coordinator/src/coordinator/main.py).
+ExecStart=/usr/local/bin/uv run --package coordinator uvicorn coordinator.main:app --host 0.0.0.0 --port ${API_PORT} --workers 1
+Restart=always
+RestartSec=5
+# Systemd expande ${API_PORT} desde EnvironmentFile solo en ExecStart si viene
+# de una unidad con `Type=simple`; confirmado en la práctica en Amazon Linux
+# 2023 (systemd >= 252). Si el despliegue real usa una versión que no lo
+# soporta, fijar API_PORT=8000 literal acá como fallback.
+
+# uv necesita poder escribir su cache; sin esto con un usuario no-root falla.
+Environment=UV_CACHE_DIR=/opt/dmp/.uv-cache
+
+[Install]
+WantedBy=multi-user.target
