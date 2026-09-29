@@ -200,7 +200,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("coordinador apagado")
 
 
-app = FastAPI(title="coordinador", lifespan=lifespan)
+app = FastAPI(
+    title="Coordinador — Distributed Multimedia Processing",
+    description=(
+        "API del coordinador: ingesta de casos, seguimiento de sub-tareas vía "
+        "barrera y estado en vivo. Swagger UI en `/docs`, JSON OpenAPI "
+        "importable en Postman (Import → Link) en `/openapi.json`."
+    ),
+    version="1.0.0",
+    lifespan=lifespan,
+)
 app.add_middleware(OriginVerifyMiddleware, secret=get_settings().ORIGIN_VERIFY_SECRET)
 
 app.include_router(health_router.router)
