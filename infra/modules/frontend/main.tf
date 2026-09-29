@@ -87,9 +87,9 @@ resource "aws_cloudfront_distribution" "this" {
   }
 
   # No se usa custom_error_response para el ruteo de la SPA: se aplicaría a
-  # toda la distribución (incluido /api/*) y convertiría los 404 de la API
-  # en index.html. El dashboard usa hash routing, así que no hace falta ni
-  # una CloudFront Function para reescribir rutas.
+  # toda la distribución (incluidos /api/*, /docs*, etc.) y convertiría los
+  # 404 de esas rutas en index.html. El dashboard usa hash routing, así que
+  # no hace falta ni una CloudFront Function para reescribir rutas.
   ordered_cache_behavior {
     path_pattern             = "/api/*"
     target_origin_id         = "coordinator"
@@ -99,6 +99,41 @@ resource "aws_cloudfront_distribution" "this" {
     cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host_header.id
     compress                 = true
+  }
+
+  # Swagger UI, ReDoc y el JSON OpenAPI (para importar a Postman) los sirve
+  # el coordinador fuera de /api/*, así que necesitan sus propios behaviors
+  # hacia el mismo origin. Son rutas de solo lectura: sin métodos de
+  # escritura ni origin_request_policy (no dependen de headers del viewer;
+  # el header X-Origin-Verify se agrega a nivel de origin, no de behavior).
+  ordered_cache_behavior {
+    path_pattern           = "/docs*"
+    target_origin_id       = "coordinator"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_disabled.id
+    compress               = true
+  }
+
+  ordered_cache_behavior {
+    path_pattern           = "/redoc*"
+    target_origin_id       = "coordinator"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_disabled.id
+    compress               = true
+  }
+
+  ordered_cache_behavior {
+    path_pattern           = "/openapi.json"
+    target_origin_id       = "coordinator"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_disabled.id
+    compress               = true
   }
 
   restrictions {
