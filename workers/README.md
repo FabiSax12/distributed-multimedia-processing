@@ -80,39 +80,18 @@ Cada 5 s el worker escribe su `WorkerItem`: CPU y memoria de la máquina
 
 ## Despliegue en EC2 (vía SSM Session Manager, sin SSH)
 
-En cada instancia worker (`terraform output instance_ids`):
+En cada instancia worker (`terraform output instance_ids`), como root, igual
+que el coordinador:
 
 ```bash
-aws ssm start-session --target <instance-id>
-
-sudo git clone <url-del-repo> /opt/dmp
-sudo chown -R ec2-user:ec2-user /opt/dmp
-cd /opt/dmp
-sudo -u ec2-user /usr/local/bin/uv sync --package workers
-
-sudo cp deploy/worker.service /etc/systemd/system/dmp-worker.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now dmp-worker
-
-journalctl -u dmp-worker -f
+curl -fsSL https://raw.githubusercontent.com/FabiSax12/distributed-multimedia-processing/main/deploy/deploy-worker.sh | sudo bash
 ```
 
-El `user_data` ya deja `/etc/dmp.env` con `POOL`, `QUEUE_URLS`, `TABLE_*` y
-los buckets.
-
-**Pool de metadatos:** ahora también necesita ffmpeg
-(`install_ffmpeg = true` en `infra/modules/compute/main.tf`). El `user_data`
-solo corre en el primer arranque, así que la instancia que ya existe hay que
-recrearla:
-
-```bash
-cd infra
-terraform apply -replace='module.compute.aws_instance.worker_metadatos[0]' -var="alert_email=..."
-```
-
-Sin ffmpeg el worker no arranca y lo dice en el log.
-
-Para actualizar el código: `cd /opt/dmp && git pull && sudo systemctl restart dmp-worker`.
+`deploy/deploy-worker.sh` sirve para desplegar y para actualizar. Instala
+ffmpeg si falta (la instancia de metadatos se creó sin él), clona el repo en
+`/opt/dmp` y levanta `dmp-worker`. El `user_data` ya deja `/etc/dmp.env` con
+`POOL`, `QUEUE_URLS`, `TABLE_*` y los buckets. Logs:
+`journalctl -u dmp-worker -f`.
 
 ## Correr localmente
 
