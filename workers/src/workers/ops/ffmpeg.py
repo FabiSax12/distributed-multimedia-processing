@@ -43,6 +43,7 @@ def probe(src: Path, timeout_s: float = _PROBE_TIMEOUT_S) -> dict[str, Any]:
             capture_output=True,
             text=True,
             timeout=min(timeout_s, _PROBE_TIMEOUT_S),
+            check=False,  # el código de salida se revisa abajo
         )  # fmt: skip
     except subprocess.TimeoutExpired as exc:
         raise OpError(ErrorCode.TIMEOUT, "ffprobe superó el tiempo máximo") from exc

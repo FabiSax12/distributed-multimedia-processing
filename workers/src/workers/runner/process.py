@@ -69,7 +69,9 @@ class WorkerContext:
             QueueUrl=self.queue_urls[RESULTS_QUEUE], MessageBody=result.to_body()
         )
 
-    def result(self, task: SubTaskMessage, attempt: int, **fields: Any) -> ResultMessage:
+    def result(
+        self, task: SubTaskMessage, attempt: int, **fields: Any
+    ) -> ResultMessage:
         return ResultMessage(
             subtask_id=task.subtask_id,
             case_id=task.case_id,
@@ -91,7 +93,9 @@ def handle_message(ctx: WorkerContext, queue_name: str, raw: dict[str, Any]) -> 
     try:
         task = SubTaskMessage.from_body(raw["Body"])
     except Exception:
-        logger.exception("SubTaskMessage ilegible, se descarta", extra={"queue": queue_name})
+        logger.exception(
+            "SubTaskMessage ilegible, se descarta", extra={"queue": queue_name}
+        )
         delete()
         return
 
@@ -104,7 +108,9 @@ def handle_message(ctx: WorkerContext, queue_name: str, raw: dict[str, Any]) -> 
                 attempt,
                 status=SubTaskStatus.CANCELLED,
                 finished_at=utcnow(),
-                error=ErrorInfo(code=ErrorCode.CANCELLED, message="caso cancelado antes de procesar"),
+                error=ErrorInfo(
+                    code=ErrorCode.CANCELLED, message="caso cancelado antes de procesar"
+                ),
             )
         )
         delete()
@@ -114,7 +120,9 @@ def handle_message(ctx: WorkerContext, queue_name: str, raw: dict[str, Any]) -> 
     if attempt > 1:
         ctx.publish(ctx.result(task, attempt, status=SubTaskStatus.RETRYING))
     started_at = utcnow()
-    ctx.publish(ctx.result(task, attempt, status=SubTaskStatus.ASSIGNED, started_at=started_at))
+    ctx.publish(
+        ctx.result(task, attempt, status=SubTaskStatus.ASSIGNED, started_at=started_at)
+    )
 
     try:
         with ctx.heartbeat.track(task.subtask_id):
@@ -168,19 +176,32 @@ def _run(
             nonlocal last
             if pct >= last + _PROGRESS_STEP:
                 last = pct
-                ctx.publish(ctx.result(task, attempt, status=SubTaskStatus.RUNNING, progress=pct))
+                ctx.publish(
+                    ctx.result(
+                        task, attempt, status=SubTaskStatus.RUNNING, progress=pct
+                    )
+                )
 
         on_progress(0)
         output = OPERATIONS[task.operation](
-            task, src, out_dir, timeout_s=ctx.timeouts[queue_name], on_progress=on_progress
+            task,
+            src,
+            out_dir,
+            timeout_s=ctx.timeouts[queue_name],
+            on_progress=on_progress,
         )
 
         keys = []
         for path in output.files:
             key = f"{task.output_prefix}{path.name}"
-            content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            content_type = (
+                mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+            )
             ctx.s3.upload_file(
-                str(path), ctx.results_bucket, key, ExtraArgs={"ContentType": content_type}
+                str(path),
+                ctx.results_bucket,
+                key,
+                ExtraArgs={"ContentType": content_type},
             )
             keys.append(key)
         return keys, output.meta
@@ -191,7 +212,9 @@ def _download(ctx: WorkerContext, key: str, dest: Path) -> None:
         ctx.s3.download_file(ctx.dataset_bucket, key, str(dest))
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey"}:
-            raise OpError(ErrorCode.CORRUPT_INPUT, f"{key} no existe en el dataset") from exc
+            raise OpError(
+                ErrorCode.CORRUPT_INPUT, f"{key} no existe en el dataset"
+            ) from exc
         raise
 
 
@@ -205,7 +228,9 @@ def _is_cancelled(ctx: WorkerContext, case_id: str) -> bool:
     return item.get("cancel_requested", {}).get("BOOL", False)
 
 
-def consume(ctx: WorkerContext, poll_order: tuple[str, ...], stop_event: threading.Event) -> None:
+def consume(
+    ctx: WorkerContext, poll_order: tuple[str, ...], stop_event: threading.Event
+) -> None:
     """Loop de un hilo consumidor. Termina la sub-tarea en curso antes de salir
     cuando `stop_event` se activa (systemd stop)."""
     while not stop_event.is_set():

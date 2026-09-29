@@ -41,7 +41,11 @@ def audio_convert(
     )
     return OpOutput(
         [out],
-        {"target_format": fmt, "duration_s": duration, "size_bytes": out.stat().st_size},
+        {
+            "target_format": fmt,
+            "duration_s": duration,
+            "size_bytes": out.stat().st_size,
+        },
     )
 
 

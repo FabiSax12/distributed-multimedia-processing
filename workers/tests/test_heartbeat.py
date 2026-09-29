@@ -33,7 +33,9 @@ def _read(aws, worker_id: str) -> WorkerItem:
     raw = aws["dynamodb"].get_item(
         TableName=TABLE_WORKERS, Key={"worker_id": {"S": worker_id}}
     )["Item"]
-    return from_item(WorkerItem, {k: _deserializer.deserialize(v) for k, v in raw.items()})
+    return from_item(
+        WorkerItem, {k: _deserializer.deserialize(v) for k, v in raw.items()}
+    )
 
 
 def test_beat_writes_worker_item(aws) -> None:

@@ -53,7 +53,9 @@ def _fake_api(monkeypatch, responder) -> list[str]:
     return urls
 
 
-def test_metadata_audio_combines_ffprobe_and_catalog(media, tmp_path, monkeypatch) -> None:
+def test_metadata_audio_combines_ffprobe_and_catalog(
+    media, tmp_path, monkeypatch
+) -> None:
     urls = _fake_api(monkeypatch, lambda url: _MB_RESPONSE)
 
     output = _run(make_task("metadata", "audio"), media["audio"], tmp_path)
@@ -106,9 +108,15 @@ def test_lyrics_found(media, tmp_path, monkeypatch) -> None:
 
     names = {f.name for f in output.files}
     assert names == {"lyrics.txt", "lyrics.json"}
-    assert (tmp_path / "lyrics.txt").read_text(encoding="utf-8") == "Is this the real life?"
+    assert (tmp_path / "lyrics.txt").read_text(
+        encoding="utf-8"
+    ) == "Is this the real life?"
     assert urls == ["https://api.lyrics.ovh/v1/Queen/Bohemian%20Rhapsody"]
-    assert output.meta == {"found": True, "artist": "Queen", "title": "Bohemian Rhapsody"}
+    assert output.meta == {
+        "found": True,
+        "artist": "Queen",
+        "title": "Bohemian Rhapsody",
+    }
 
 
 def test_lyrics_not_found_still_completes(media, tmp_path, monkeypatch) -> None:
@@ -148,7 +156,9 @@ def test_lyrics_falls_back_to_file_name(media, tmp_path, monkeypatch) -> None:
     urls = _fake_api(monkeypatch, lambda url: {"lyrics": "..."})
 
     # El audio del clip de prueba no trae tags: queda "Artista - Título" del nombre.
-    task = make_task("lyrics", "audio", input_key="uploads/u1/Soda Stereo - De Música Ligera.mp3")
+    task = make_task(
+        "lyrics", "audio", input_key="uploads/u1/Soda Stereo - De Música Ligera.mp3"
+    )
     _run(task, media["video"], tmp_path)
 
     assert urls == ["https://api.lyrics.ovh/v1/Soda%20Stereo/De%20M%C3%BAsica%20Ligera"]
@@ -162,7 +172,9 @@ def test_lyrics_falls_back_to_file_name(media, tmp_path, monkeypatch) -> None:
         ("image", "image", "image/720p/horizontal"),
     ],
 )
-def test_classify_builds_folder_by_type(media, tmp_path, key, media_type, folder) -> None:
+def test_classify_builds_folder_by_type(
+    media, tmp_path, key, media_type, folder
+) -> None:
     output = _run(make_task("classify", media_type), media[key], tmp_path)
 
     data = json.loads(output.files[0].read_text(encoding="utf-8"))

@@ -43,7 +43,9 @@ def test_ignores_queues_outside_its_poll_order(aws) -> None:
     # video nunca toma metadatos: no está en su POLL_ORDER.
     _send(aws, "metadatos-alta", "no-es-mio")
 
-    assert receive_next(aws["sqs"], QUEUE_URLS, POLL_ORDER[Pool.VIDEO], wait_s=0) is None
+    assert (
+        receive_next(aws["sqs"], QUEUE_URLS, POLL_ORDER[Pool.VIDEO], wait_s=0) is None
+    )
 
 
 def test_op_timeout_is_below_each_queue_visibility_timeout(aws) -> None:

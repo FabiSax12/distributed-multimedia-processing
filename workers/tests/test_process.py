@@ -100,7 +100,11 @@ def test_completed_subtask_uploads_outputs_and_deletes_message(aws, media) -> No
     final = results[-1]
     assert final.output_keys == ["results/case-1/st-1/cancion.mp3"]
     assert final.started_at is not None and final.finished_at is not None
-    assert (final.worker_id, final.pool, final.attempt) == ("audio-test-1", Pool.AUDIO, 1)
+    assert (final.worker_id, final.pool, final.attempt) == (
+        "audio-test-1",
+        Pool.AUDIO,
+        1,
+    )
     assert final.output_meta["target_format"] == "mp3"
     aws["s3"].head_object(Bucket=RESULTS_BUCKET, Key=final.output_keys[0])
     assert _in_queue(aws, "audio-normal") == 0
@@ -148,7 +152,9 @@ def test_missing_input_is_corrupt_input(aws) -> None:
     assert final.error.code is ErrorCode.CORRUPT_INPUT
 
 
-def test_unexpected_exception_keeps_message_for_sqs_retry(aws, media, monkeypatch) -> None:
+def test_unexpected_exception_keeps_message_for_sqs_retry(
+    aws, media, monkeypatch
+) -> None:
     def boom(*args, **kwargs):
         raise RuntimeError("bug o falla transitoria")
 
@@ -185,7 +191,9 @@ def test_redelivered_message_reports_retrying_first(aws, media) -> None:
 
 
 def test_unreadable_message_is_dropped(aws) -> None:
-    aws["sqs"].send_message(QueueUrl=QUEUE_URLS["audio-normal"], MessageBody="{no es json")
+    aws["sqs"].send_message(
+        QueueUrl=QUEUE_URLS["audio-normal"], MessageBody="{no es json"
+    )
 
     handle_message(_ctx(aws), *_receive(aws))
 
@@ -212,7 +220,12 @@ def test_progress_is_throttled_to_ten_point_steps(aws, media, monkeypatch) -> No
 
 def test_worker_helping_another_pool_uses_that_queue(aws, media) -> None:
     # metadatos ayuda con audio-normal (POLL_ORDER): procesa y borra de ahí.
-    _enqueue(aws, make_task("image_thumbnail", "image"), queue="audio-normal", src=media["image"])
+    _enqueue(
+        aws,
+        make_task("image_thumbnail", "image"),
+        queue="audio-normal",
+        src=media["image"],
+    )
 
     handle_message(_ctx(aws, Pool.METADATA), *_receive(aws, Pool.METADATA))
 
@@ -220,4 +233,3 @@ def test_worker_helping_another_pool_uses_that_queue(aws, media) -> None:
     assert final.status is SubTaskStatus.COMPLETED
     assert final.pool is Pool.METADATA
     assert _in_queue(aws, "audio-normal") == 0
-

@@ -1872,7 +1872,6 @@ dev = [
     { name = "moto", extra = ["dynamodb", "s3", "server"] },
     { name = "pytest" },
     { name = "ruff" },
-    { name = "websockets" },
 ]
 
 [package.metadata]
@@ -1889,7 +1888,6 @@ dev = [
     { name = "moto", extras = ["sqs", "dynamodb", "s3", "server"], specifier = ">=5.0" },
     { name = "pytest", specifier = ">=8.2" },
     { name = "ruff", specifier = ">=0.6" },
-    { name = "websockets", specifier = ">=12" },
 ]
 
 [[package]]

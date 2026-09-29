@@ -55,7 +55,9 @@ class NotFound(Exception):
 
 
 def _get_json(url: str) -> dict[str, Any]:
-    request = Request(url, headers={"User-Agent": _USER_AGENT, "Accept": "application/json"})
+    request = Request(
+        url, headers={"User-Agent": _USER_AGENT, "Accept": "application/json"}
+    )
     host = urlparse(url).netloc
     try:
         with urlopen(request, timeout=_HTTP_TIMEOUT_S) as resp:
@@ -63,7 +65,9 @@ def _get_json(url: str) -> dict[str, Any]:
     except HTTPError as exc:
         if exc.code == 404:
             raise NotFound(url) from exc
-        raise OpError(ErrorCode.EXTERNAL_API_ERROR, f"{host} respondió {exc.code}") from exc
+        raise OpError(
+            ErrorCode.EXTERNAL_API_ERROR, f"{host} respondió {exc.code}"
+        ) from exc
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise OpError(ErrorCode.EXTERNAL_API_ERROR, f"{host}: {exc}") from exc
 
@@ -78,7 +82,9 @@ def _tags(info: dict[str, Any]) -> dict[str, str]:
     return tags
 
 
-def artist_title(task: SubTaskMessage, info: dict[str, Any]) -> tuple[str | None, str | None]:
+def artist_title(
+    task: SubTaskMessage, info: dict[str, Any]
+) -> tuple[str | None, str | None]:
     tags = _tags(info)
     artist = task.params.get("artist") or tags.get("artist")
     title = task.params.get("title") or tags.get("title")
@@ -94,7 +100,14 @@ def _summary(info: dict[str, Any]) -> dict[str, Any]:
     streams = [
         {
             key: s[key]
-            for key in ("codec_type", "codec_name", "width", "height", "sample_rate", "channels")
+            for key in (
+                "codec_type",
+                "codec_name",
+                "width",
+                "height",
+                "sample_rate",
+                "channels",
+            )
             if key in s
         }
         for s in info["streams"]
@@ -160,7 +173,11 @@ def metadata(
     out = _write_json(out_dir / "metadata.json", data)
     return OpOutput(
         [out],
-        {"format": data["format"], "duration_s": data["duration_s"], "catalog_match": catalog_match},
+        {
+            "format": data["format"],
+            "duration_s": data["duration_s"],
+            "catalog_match": catalog_match,
+        },
     )
 
 
@@ -175,11 +192,17 @@ def lyrics(
     info = ffmpeg.probe(src, timeout_s)
     artist, title = artist_title(task, info)
     if not (artist and title):
-        meta = {"found": False, "reason": "sin artista o título (tags, params o nombre)"}
+        meta = {
+            "found": False,
+            "reason": "sin artista o título (tags, params o nombre)",
+        }
         return OpOutput([_write_json(out_dir / "lyrics.json", meta)], meta)
 
     try:
-        text = (_get_json(f"{_LYRICS_URL}/{quote(artist)}/{quote(title)}").get("lyrics") or "").strip()
+        text = (
+            _get_json(f"{_LYRICS_URL}/{quote(artist)}/{quote(title)}").get("lyrics")
+            or ""
+        ).strip()
     except NotFound:
         text = ""
 
@@ -193,7 +216,9 @@ def lyrics(
 
 
 def _slug(value: str) -> str:
-    ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    ascii_value = (
+        unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    )
     return re.sub(r"[^a-z0-9]+", "-", ascii_value.lower()).strip("-") or "otro"
 
 
@@ -228,14 +253,19 @@ def classify(
         width, height = int(video.get("width", 0)), int(video.get("height", 0))
         labels["resolution"] = _resolution(min(width, height))
         labels["orientation"] = (
-            "horizontal" if width > height else "vertical" if height > width else "cuadrada"
+            "horizontal"
+            if width > height
+            else "vertical"
+            if height > width
+            else "cuadrada"
         )
     if task.media_type is not MediaType.IMAGE:
         labels["duration"] = _duration_bucket(duration)
     if audio:
         labels["audio_quality"] = (
             "sin-perdida"
-            if audio.get("codec_name") in _LOSSLESS_CODECS or str(audio.get("codec_name", "")).startswith("pcm_")
+            if audio.get("codec_name") in _LOSSLESS_CODECS
+            or str(audio.get("codec_name", "")).startswith("pcm_")
             else "comprimido"
         )
     genre = _tags(info).get("genre")
