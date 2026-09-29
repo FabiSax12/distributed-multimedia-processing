@@ -1,0 +1,36 @@
+# Unidad systemd de los workers (los tres pools usan la misma). Se instala en
+# cada EC2 worker como /etc/systemd/system/dmp-worker.service. El pool lo
+# elige POOL en /etc/dmp.env, que ya escribe el user_data de Terraform
+# (infra/modules/compute/templates/worker.sh.tftpl).
+#
+# Instalación (vía SSM Session Manager, sin SSH — ver workers/README.md):
+#   sudo git clone <repo> /opt/dmp && sudo chown -R ec2-user:ec2-user /opt/dmp
+#   cd /opt/dmp && uv sync --package workers
+#   sudo cp deploy/worker.service /etc/systemd/system/dmp-worker.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now dmp-worker
+
+[Unit]
+Description=Worker del pipeline de procesamiento multimedia distribuido (dmp)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/opt/dmp
+EnvironmentFile=/etc/dmp.env
+ExecStart=/usr/local/bin/uv run --package workers python -m workers.main
+Restart=always
+RestartSec=5
+# SIGTERM: cada hilo termina su sub-tarea y sale. Pasado este tiempo systemd
+# mata el proceso; el mensaje no se borró y SQS lo reentrega a otro worker.
+TimeoutStopSec=120
+
+# ffmpeg estático en /usr/local/bin (user_data); uv necesita un cache escribible.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=UV_CACHE_DIR=/opt/dmp/.uv-cache
+
+[Install]
+WantedBy=multi-user.target
