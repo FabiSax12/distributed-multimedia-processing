@@ -15,6 +15,7 @@ un backend externo solo para esto.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 from collections.abc import AsyncIterator
@@ -22,7 +23,6 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
-
 from shared.routing import DLQ, RESULTS_QUEUE
 
 from .api import cases as cases_router
@@ -30,6 +30,7 @@ from .api import dataset as dataset_router
 from .api import health as health_router
 from .api import state as state_router
 from .api import uploads as uploads_router
+from .api import ws as ws_router
 from .aws import dynamodb_client, s3_client, sqs_client
 from .barrier.sweeper import run_sweep
 from .config import get_settings
@@ -37,6 +38,7 @@ from .consumers.base import SqsConsumerThread
 from .consumers.dlq import build_dlq_handler
 from .consumers.results import build_results_handler
 from .logging import setup_logging
+from .monitor.broadcaster import Broadcaster
 from .monitor.samples import run_samples_loop
 from .monitor.snapshot import run_snapshot_loop
 from .repo.cases import CasesRepo
@@ -70,6 +72,13 @@ def _sweeper_loop(stop_event: threading.Event, interval: float, **kwargs: Any) -
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     setup_logging()
     settings = get_settings()
+
+    # Se liga el loop ANTES de arrancar los hilos de fondo: el hilo de
+    # snapshot necesita esta referencia lista para poder llamar a `publish`
+    # (ver docstring de `Broadcaster.bind_loop`).
+    broadcaster = Broadcaster()
+    broadcaster.bind_loop(asyncio.get_running_loop())
+    app.state.broadcaster = broadcaster
 
     dynamodb = dynamodb_client()
     s3 = s3_client()
@@ -155,6 +164,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             "recent_cases_limit": settings.RECENT_CASES_IN_STATE,
             "pool_saturation_queue_threshold": settings.POOL_SATURATION_QUEUE_THRESHOLD,
             "pool_saturation_cpu_percent": settings.POOL_SATURATION_CPU_PERCENT,
+            "broadcaster": broadcaster,
         },
         name="snapshot-loop",
         daemon=True,
@@ -186,6 +196,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                     "el hilo %s no terminó dentro del timeout de shutdown, puede seguir corriendo",
                     thread.name,
                 )
+        await broadcaster.close_all(code=1001)
         logger.info("coordinador apagado")
 
 
@@ -197,3 +208,4 @@ app.include_router(cases_router.router, prefix="/api")
 app.include_router(uploads_router.router, prefix="/api")
 app.include_router(dataset_router.router, prefix="/api")
 app.include_router(state_router.router, prefix="/api")
+app.include_router(ws_router.router, prefix="/api")

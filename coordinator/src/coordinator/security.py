@@ -21,6 +21,20 @@ logger = logging.getLogger(__name__)
 _HEADER = "X-Origin-Verify"
 
 
+def verify_origin(provided: str | None, secret: str) -> bool:
+    """`True` si `provided` coincide con `secret`, comparando con
+    `hmac.compare_digest` (evita timing attacks). Si `secret` viene vacío
+    (modo local, sin frontend desplegado) siempre es `True`.
+
+    Extraída de `OriginVerifyMiddleware.dispatch` para que `api/ws.py` pueda
+    reusar exactamente la misma validación en el handshake del WebSocket, que
+    `BaseHTTPMiddleware` no llega a cubrir (ver su docstring).
+    """
+    if not secret:
+        return True
+    return hmac.compare_digest(provided or "", secret)
+
+
 class OriginVerifyMiddleware(BaseHTTPMiddleware):
     """Exige `X-Origin-Verify == secret` en toda ruta bajo `/api/`.
 
@@ -42,11 +56,11 @@ class OriginVerifyMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        if not self._secret or not request.url.path.startswith("/api/"):
+        if not request.url.path.startswith("/api/"):
             return await call_next(request)
 
         provided = request.headers.get(_HEADER, "")
-        if not hmac.compare_digest(provided, self._secret):
+        if not verify_origin(provided, self._secret):
             return JSONResponse({"detail": "origin no verificado"}, status_code=403)
 
         return await call_next(request)

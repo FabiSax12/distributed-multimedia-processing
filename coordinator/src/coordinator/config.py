@@ -17,7 +17,6 @@ from typing import Any
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 from shared.models import TABLE_CASES, TABLE_SUBTASKS, TABLE_WORKERS
 from shared.routing import ALL_WORK_QUEUES, DLQ, RESULTS_QUEUE
 
@@ -54,6 +53,11 @@ class Settings(BaseSettings):
 
     API_PORT: int = 8000
     ORIGIN_VERIFY_SECRET: str = ""
+
+    # `api/ws.py`: intervalo del ping de aplicación (CloudFront corta
+    # conexiones inactivas) y tope de conexiones WebSocket simultáneas.
+    WS_PING_INTERVAL_S: float = 25.0
+    WS_MAX_CLIENTS: int = 20
 
     RESULTS_CONSUMER_THREADS: int = 4
     PRESIGN_EXPIRES_S: int = 900

@@ -23,6 +23,7 @@ from ..repo.cases import CasesRepo
 from ..repo.subtasks import SubTasksRepo
 from ..repo.workers import WorkersRepo
 from . import balancer
+from .broadcaster import Broadcaster
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +60,18 @@ def run_snapshot_once(
     recent_cases_limit: int,
     pool_saturation_queue_threshold: int,
     pool_saturation_cpu_percent: float,
+    broadcaster: Broadcaster | None = None,
 ) -> None:
     """Una vuelta: junta casos/workers/colas/alertas y reemplaza el snapshot global.
 
     Si algo falla (throttling, cola inexistente, etc.) se loguea y se conserva
     el snapshot anterior — una vuelta fallida no debe tirar abajo el hilo que
     la llama en loop, ni dejar `/api/state` sin datos.
+
+    `broadcaster`, si se pasa, recibe el snapshot recién reemplazado vía
+    `Broadcaster.publish` para empujarlo por `WS /api/ws` (ver `main.py` y
+    `monitor/broadcaster.py`). Es opcional (`None` por default) para no romper
+    llamadas existentes que no conocen el WebSocket.
     """
     try:
         snapshot = _build_snapshot(
@@ -84,6 +91,14 @@ def run_snapshot_once(
     global _snapshot
     with _lock:
         _snapshot = snapshot
+
+    if broadcaster is not None:
+        try:
+            broadcaster.publish(snapshot)
+        except Exception:
+            logger.exception(
+                "broadcaster.publish falló, se sigue con el próximo ciclo del snapshot"
+            )
 
 
 def _build_snapshot(
