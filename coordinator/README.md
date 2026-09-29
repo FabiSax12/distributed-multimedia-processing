@@ -38,7 +38,82 @@ un `threading.Event` compartido y hace `join(timeout=10s)` de cada hilo. Los
 consumers de SQS pueden tardar hasta `wait_time` (20s) en notar el evento si
 están a mitad de un `ReceiveMessage` de long-polling — son `daemon=True`, así
 que el proceso igual termina, pero un shutdown "limpio" puede tardar unos
-segundos más que el timeout de systemd por defecto.
+segundos más que el timeout de systemd por defecto. Antes de esperar a los
+hilos, también se cierran (código `1001`) todas las conexiones WebSocket
+abiertas de `/api/ws` (ver abajo).
+
+## Estado en vivo (WebSocket)
+
+`WS /api/ws` empuja el mismo `StateResponse` que arma `snapshot-loop` cada
+`SNAPSHOT_INTERVAL_S`, sin que el panel tenga que hacer polling. `GET
+/api/state` sigue existiendo y el panel debería usarlo como respaldo mientras
+el socket esté caído (ver "Qué debe hacer el dashboard" más abajo).
+
+- **URL**: `wss://<dominio-cloudfront>/api/ws` en producción (el comportamiento
+  `/api/*` de CloudFront ya reenvía los headers del upgrade de WebSocket y
+  agrega `X-Origin-Verify`, igual que para las rutas REST); `ws://localhost:8000/api/ws`
+  corriendo el coordinador en local.
+
+- **Formato de los mensajes**, dos tipos de objeto JSON distinguidos por
+  `type`:
+
+  ```json
+  {"type": "state", "data": <StateResponse serializado, igual que GET /api/state>}
+  {"type": "ping"}
+  ```
+
+  El sobre `{"type": "state", "data": ...}` se arma una sola vez en
+  `Broadcaster.publish` (serializando el `StateResponse` una sola vez); cada
+  cliente conectado recibe ese mismo texto tal cual, sin que el servidor lo
+  vuelva a parsear/reserializar por conexión.
+
+- **Puente hilo → event loop** (`monitor/broadcaster.py`): `snapshot-loop`
+  corre en un hilo de Python, no en una corrutina, así que no puede tocar un
+  `WebSocket` ni un `asyncio.Queue` directamente (no son thread-safe). El
+  `Broadcaster` guarda el event loop real (`asyncio.get_running_loop()`,
+  capturado en el `lifespan` antes de arrancar los hilos) y, cuando
+  `snapshot-loop` llama a `publish()`, agenda la entrega real con
+  `loop.call_soon_threadsafe(...)`. Solo código que corre dentro del loop
+  toca las colas o los sockets.
+
+  Por qué la cola por cliente es de tamaño 1: cada conexión tiene su propia
+  `asyncio.Queue(maxsize=1)`. Si llega un estado nuevo antes de que ese
+  cliente haya leído el anterior, el viejo se descarta y se deja el
+  nuevo — un cliente lento (pestaña en segundo plano, conexión con latencia
+  alta) nunca acumula un backlog de estados viejos; siempre termina viendo el
+  último estado disponible, nunca uno atrasado, y nunca bloquea el envío a los
+  demás clientes conectados.
+
+  `publish()` también descarta una publicación si el contenido no cambió
+  respecto al último envío, ignorando `generated_at` (que cambia en cada
+  vuelta del snapshot aunque nada más lo haga) — evita saturar a los clientes
+  con "cambios" que no son tales.
+
+- **Por qué la autenticación va en el handshake y no en un middleware**:
+  `OriginVerifyMiddleware` (`security.py`) es un `BaseHTTPMiddleware`, y
+  Starlette no lo corre sobre conexiones WebSocket (deja pasar sin tocar
+  cualquier scope que no sea `http`). Por eso el handler de `/api/ws` revalida
+  `X-Origin-Verify` a mano, ANTES de aceptar la conexión (`websocket.accept()`),
+  reusando `security.verify_origin` — la misma comparación con
+  `hmac.compare_digest` (evita timing attacks) y el mismo criterio de
+  "`ORIGIN_VERIFY_SECRET` vacío = modo local, se deja pasar" que ya usa el
+  middleware HTTP. Si falta o no coincide, se cierra con código `1008` sin
+  haber aceptado nunca la conexión. También hay un tope de conexiones
+  simultáneas (`WS_MAX_CLIENTS`, default 20): al superarlo se cierra con
+  `1013`.
+
+- **Ping de aplicación**: cada `WS_PING_INTERVAL_S` segundos (default 25) el
+  servidor manda `{"type": "ping"}`. Existe porque CloudFront corta
+  conexiones inactivas: el ping mantiene el socket vivo y de paso sirve para
+  detectar clientes muertos.
+
+- **Qué debe hacer el dashboard**:
+  - Reconectar con backoff exponencial si el socket se cae o nunca llega a
+    conectar (1 s, 2 s, 4 s, ... hasta un tope de 30 s).
+  - Mientras el socket esté caído, volver a hacer polling de `GET
+    /api/state` como respaldo.
+  - Ignorar los mensajes de tipo `"ping"` (no traen datos, solo mantienen la
+    conexión viva).
 
 ## Flujo de un caso
 
