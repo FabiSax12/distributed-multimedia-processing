@@ -21,10 +21,16 @@ sin red, esas sub-tareas fallan con external_api_error y el caso igual cierra.
 Uso (desde la raíz del repo, necesita ffmpeg en PATH):
     uv sync --all-packages
     uv run --all-packages python workers/scripts/local_e2e.py
+
+Con `--endpoint` usa un emulador que ya esté corriendo en vez de moto, por
+ejemplo Floci en Docker:
+    docker run -d --name floci -p 4566:4566 floci/floci:latest
+    uv run --all-packages python workers/scripts/local_e2e.py --endpoint http://localhost:4566
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
@@ -56,10 +62,10 @@ MAX_RECEIVE_COUNT = 3
 REPO = Path(__file__).resolve().parents[2]
 
 
-def _env() -> dict[str, str]:
+def _env(endpoint: str) -> dict[str, str]:
     return {
         **os.environ,
-        "AWS_ENDPOINT_URL": f"http://127.0.0.1:{MOTO_PORT}",
+        "AWS_ENDPOINT_URL": endpoint,
         "AWS_ACCESS_KEY_ID": "testing",
         "AWS_SECRET_ACCESS_KEY": "testing",
         "AWS_REGION": REGION,
@@ -173,10 +179,20 @@ def wait_healthy(proc: subprocess.Popen, log: Path) -> None:
 
 
 def main() -> None:
-    env = _env()
-    logging.getLogger("werkzeug").setLevel(logging.ERROR)  # un log por request de moto
-    moto = ThreadedMotoServer(ip_address="127.0.0.1", port=MOTO_PORT)
-    moto.start()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--endpoint",
+        help="emulador ya corriendo (p. ej. Floci en http://localhost:4566); sin esto, moto",
+    )
+    args = parser.parse_args()
+
+    moto = None
+    if args.endpoint is None:
+        logging.getLogger("werkzeug").setLevel(logging.ERROR)  # un log por request
+        moto = ThreadedMotoServer(ip_address="127.0.0.1", port=MOTO_PORT)
+        moto.start()
+    env = _env(args.endpoint or f"http://127.0.0.1:{MOTO_PORT}")
+    print(f"emulador: {env['AWS_ENDPOINT_URL']}")
     procs: list[subprocess.Popen] = []
     tmp = Path(tempfile.mkdtemp(prefix="dmp-e2e-"))
     try:
@@ -284,7 +300,8 @@ def main() -> None:
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        moto.stop()
+        if moto is not None:
+            moto.stop()
         print(f"logs en {tmp}")
 
 

@@ -129,6 +129,16 @@ una canción, una imagen, un `.mp4` corrupto y un `.txt`, y verifica que
 cierre como `partially_completed` con los tres pools en el reporte. Necesita
 ffmpeg en PATH.
 
+Con Floci (emulador de AWS en Docker) en vez de moto:
+
+```bash
+docker run -d --name floci -p 4566:4566 floci/floci:latest
+uv run --all-packages python workers/scripts/local_e2e.py --endpoint http://127.0.0.1:4566
+```
+
+Conviene `127.0.0.1` y no `localhost`: si Docker corre dentro de WSL, boto3
+puede resolver `localhost` a IPv6 y no llegar.
+
 ### Contra AWS real
 
 Con el `.env.local` que genera Terraform en la raíz del repo:
