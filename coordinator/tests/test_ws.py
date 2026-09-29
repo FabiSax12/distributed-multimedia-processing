@@ -352,8 +352,16 @@ def test_slow_client_queue_never_accumulates_backlog() -> None:
             broadcaster.publish(_state("c2"))
             broadcaster.publish(_state("c3"))
 
-            # El rápido las sigue recibiendo sin ningún bloqueo.
-            assert _case_id_of(fast_ws.receive_json()) == "c3"
+            # El rápido las sigue recibiendo sin ningún bloqueo. `_send_loop`
+            # corre en paralelo a estos `publish`, así que c2 puede llegar
+            # antes de que c3 se haya publicado: hay que leer hasta ver c3,
+            # no asumir que el próximo mensaje ya es el último.
+            last_case_id = None
+            for _ in range(3):
+                last_case_id = _case_id_of(fast_ws.receive_json())
+                if last_case_id == "c3":
+                    break
+            assert last_case_id == "c3"
 
         # El lento nunca acumuló backlog: su cola (tamaño 1) tiene un único
         # elemento, y es el último estado publicado, no uno atrasado.

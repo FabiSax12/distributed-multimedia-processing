@@ -18,7 +18,7 @@ from typing import Any
 from botocore.exceptions import ClientError
 
 from shared.messages import ResultMessage
-from shared.models import SubTaskItem, from_item, to_item
+from shared.models import SubTaskItem, _floats_to_decimal, from_item, to_item
 
 from ..aws import deserialize_item, serialize_item
 
@@ -121,7 +121,13 @@ class SubTasksRepo:
         llega después de uno más nuevo, la condición falla y devolvemos
         `False` - es el caso esperado, no una excepción (SQS puede entregar
         `running` después de `retrying` del mismo intento por reordenamiento).
-        `started_at` se fija una sola vez con `if_not_exists`.
+        Todos los `running` de un mismo intento comparten `state_order`
+        (`shared.states.state_order` solo distingue por status/attempt, no por
+        progreso), así que cuando viene `progress` también se acepta
+        `state_order == :so` siempre que el progreso nuevo sea mayor al
+        guardado - si no, un segundo `running` con más avance del mismo
+        intento nunca se guardaría. `started_at` se fija una sola vez con
+        `if_not_exists`.
         """
         names = {"#st": "status", "#so": "state_order"}
         values: dict[str, Any] = {
@@ -141,12 +147,20 @@ class SubTasksRepo:
             values[":sa"] = {"S": started_at_if_missing.isoformat()}
             set_parts.append("started_at = if_not_exists(started_at, :sa)")
 
+        condition = "attribute_exists(subtask_id) AND #so < :so"
+        if progress is not None:
+            names["#pr"] = "progress"
+            condition = (
+                "attribute_exists(subtask_id) AND "
+                "(#so < :so OR (#so = :so AND (attribute_not_exists(#pr) OR #pr < :pr)))"
+            )
+
         try:
             self._client.update_item(
                 TableName=self._table,
                 Key={"case_id": {"S": case_id}, "subtask_id": {"S": subtask_id}},
                 UpdateExpression="SET " + ", ".join(set_parts),
-                ConditionExpression="attribute_exists(subtask_id) AND #so < :so",
+                ConditionExpression=condition,
                 ExpressionAttributeNames=names,
                 ExpressionAttributeValues=values,
             )
@@ -163,13 +177,16 @@ class SubTasksRepo:
         combina ambos en una sola transacción. `#so` se usa tanto en la
         condición (`state_order` actual < nuevo) como en el SET (nuevo valor)
         porque son la misma sustitución: la condición se evalúa sobre el valor
-        *antes* del update.
+        *antes* del update. `output_meta` pasa por `_floats_to_decimal`: los
+        workers ya evitan mandar `float` ahí, pero DynamoDB los rechaza de
+        plano y si alguno se cuela el caso queda trabado en `processing` para
+        siempre (el `TransactWriteItems` nunca llega a ejecutarse).
         """
         raw: dict[str, Any] = {
             "status": result.status.value,
             "attempt": result.attempt,
             "output_keys": result.output_keys,
-            "output_meta": result.output_meta,
+            "output_meta": _floats_to_decimal(result.output_meta),
         }
         if result.worker_id is not None:
             raw["worker_id"] = result.worker_id
