@@ -5,7 +5,7 @@ ese módulo dentro de la sesión de tests — ver docstring de `conftest.py`).""
 
 from __future__ import annotations
 
-from coordinator.security import OriginVerifyMiddleware
+from coordinator.security import OriginVerifyMiddleware, verify_origin
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -47,3 +47,26 @@ def test_empty_secret_lets_everything_through() -> None:
     client = TestClient(_build_app(""))
     resp = client.get("/api/ping")
     assert resp.status_code == 200
+
+
+# `verify_origin` es la lógica que `OriginVerifyMiddleware.dispatch` usa por
+# dentro, extraída para que `api/ws.py` la reutilice en el handshake del
+# WebSocket (donde este `BaseHTTPMiddleware` no corre, ver su docstring).
+
+
+def test_verify_origin_true_when_secret_empty() -> None:
+    assert verify_origin("cualquier-cosa", "") is True
+    assert verify_origin(None, "") is True
+
+
+def test_verify_origin_true_when_header_matches_secret() -> None:
+    assert verify_origin("s3cr3t", "s3cr3t") is True
+
+
+def test_verify_origin_false_when_header_mismatches_secret() -> None:
+    assert verify_origin("otro-valor", "s3cr3t") is False
+
+
+def test_verify_origin_false_when_header_missing() -> None:
+    assert verify_origin(None, "s3cr3t") is False
+    assert verify_origin("", "s3cr3t") is False

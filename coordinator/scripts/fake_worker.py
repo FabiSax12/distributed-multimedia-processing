@@ -25,7 +25,6 @@ import time
 
 import boto3
 from coordinator.config import get_settings
-
 from shared.messages import ErrorCode, ErrorInfo, ResultMessage, SubTaskMessage, utcnow
 from shared.models import HEARTBEAT_INTERVAL_S, WorkerItem, to_item
 from shared.routing import POLL_ORDER, RESULTS_QUEUE, Pool

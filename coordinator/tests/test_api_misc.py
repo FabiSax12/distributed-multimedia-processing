@@ -26,11 +26,12 @@ def client(aws: dict) -> Iterator[TestClient]:
 
 
 def test_healthz_ok_without_background_threads(client: TestClient) -> None:
-    # Con el lifespan no-op no hay `app.state.threads`: sin hilos que chequear,
-    # `all(alive.values())` sobre un dict vacío es `True` -> 200.
+    # Con el lifespan no-op no hay `app.state.threads` ni `app.state.broadcaster`:
+    # sin hilos que chequear, `all(alive.values())` sobre un dict vacío es
+    # `True` -> 200, y sin broadcaster el conteo de clientes WS es 0.
     resp = client.get("/healthz")
     assert resp.status_code == 200
-    assert resp.json() == {"ok": True, "threads": {}}
+    assert resp.json() == {"ok": True, "threads": {}, "ws_clients": 0}
 
 
 def test_state_returns_empty_response_before_first_snapshot(client: TestClient) -> None:
