@@ -9,13 +9,13 @@ dependencies = ["pydantic>=2.7"]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# Layout plano: este directorio (shared/) ES la raíz del paquete "shared", los
-# módulos (routing.py, messages.py, ...) están al mismo nivel que este
-# pyproject.toml, no en un subdirectorio shared/shared/. `sources` le dice a
-# hatchling que anteponga el prefijo "shared" a todo lo que incluya, en vez de
-# buscar un subdirectorio con ese nombre.
+# Layout estándar src/-like: los módulos viven en shared/shared/ (junto a este
+# pyproject.toml está el paquete "shared" de verdad). Antes esto era un layout
+# plano con un remapeo `sources` en el build de hatchling, pero ese remapeo no
+# se refleja en el install editable (`uv sync`/`pip install -e`): el .pth que
+# genera apunta al propio directorio shared/ en vez de a su padre, y
+# `import shared` sólo resolvía por accidente vía el cwd-on-path de Python.
+# Con el layout anidado, hatchling detecta el paquete solo y el editable
+# install funciona sin trucos.
 [tool.hatch.build.targets.wheel]
-include = ["*.py"]
-
-[tool.hatch.build.targets.wheel.sources]
-"" = "shared"
+packages = ["shared"]
