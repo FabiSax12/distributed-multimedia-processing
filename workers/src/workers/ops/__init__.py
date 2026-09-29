@@ -8,6 +8,7 @@ from shared.routing import Operation as Op
 
 from .audio import audio_convert, image_thumbnail
 from .base import Operation
+from .metadatos import classify, lyrics, metadata
 from .video import audio_extract, video_convert, video_thumbnail
 
 OPERATIONS: dict[Op, Operation] = {
@@ -16,4 +17,7 @@ OPERATIONS: dict[Op, Operation] = {
     Op.VIDEO_THUMBNAIL: video_thumbnail,
     Op.AUDIO_CONVERT: audio_convert,
     Op.IMAGE_THUMBNAIL: image_thumbnail,
+    Op.METADATA: metadata,
+    Op.LYRICS: lyrics,
+    Op.CLASSIFY: classify,
 }

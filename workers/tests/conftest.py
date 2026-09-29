@@ -134,7 +134,7 @@ def make_task(operation: str, media_type: str, **params: Any):
     return SubTaskMessage(
         subtask_id="st-1",
         case_id="case-1",
-        input_key=f"uploads/u1/entrada.{params.pop('ext', 'bin')}",
+        input_key=params.pop("input_key", "uploads/u1/entrada.bin"),
         media_type=media_type,
         operation=operation,
         priority="normal",
