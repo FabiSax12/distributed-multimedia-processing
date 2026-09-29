@@ -233,3 +233,21 @@ def test_worker_helping_another_pool_uses_that_queue(aws, media) -> None:
     assert final.status is SubTaskStatus.COMPLETED
     assert final.pool is Pool.METADATA
     assert _in_queue(aws, "audio-normal") == 0
+
+
+def test_output_meta_never_carries_floats(aws, media, monkeypatch) -> None:
+    # El coordinador guarda output_meta tal cual en DynamoDB, que rechaza
+    # float ("Use Decimal types instead"): el caso quedaría sin cerrar.
+    def fake_op(task, src, out_dir, *, timeout_s, on_progress):
+        out = out_dir / "x.txt"
+        out.write_text("ok")
+        return OpOutput([out], {"ratio": 0.5, "nested": {"fps": 23.976}, "n": 3})
+
+    monkeypatch.setitem(process.OPERATIONS, "audio_convert", fake_op)
+    _enqueue(aws, make_task("audio_convert", "audio"), src=media["audio"])
+
+    handle_message(_ctx(aws), *_receive(aws))
+
+    final = _results(aws)[-1]
+    assert final.status is SubTaskStatus.COMPLETED
+    assert final.output_meta == {"ratio": "0.5", "nested": {"fps": "23.976"}, "n": 3}

@@ -134,7 +134,7 @@ def handle_message(ctx: WorkerContext, queue_name: str, raw: dict[str, Any]) -> 
             started_at=started_at,
             finished_at=utcnow(),
             output_keys=output_keys,
-            output_meta=output_meta,
+            output_meta=_without_floats(output_meta),
         )
     except OpError as exc:
         terminal = ctx.result(
@@ -205,6 +205,20 @@ def _run(
             )
             keys.append(key)
         return keys, output.meta
+
+
+def _without_floats(value: Any) -> Any:
+    """float -> str, recursivo. El coordinador guarda `output_meta` tal cual en
+    DynamoDB, que rechaza float ("Use Decimal types instead") y deja el cierre
+    de la sub-tarea reintentándose para siempre. Las operaciones ya reportan
+    duraciones en ms enteros; esto cubre cualquier float que se escape."""
+    if isinstance(value, float):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: _without_floats(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_without_floats(v) for v in value]
+    return value
 
 
 def _download(ctx: WorkerContext, key: str, dest: Path) -> None:

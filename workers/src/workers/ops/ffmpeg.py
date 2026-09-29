@@ -63,6 +63,11 @@ def duration_s(info: dict[str, Any]) -> float | None:
         return None
 
 
+def ms(seconds: float | None) -> int | None:
+    """Segundos -> ms enteros para `output_meta` (DynamoDB no acepta float)."""
+    return None if seconds is None else round(seconds * 1000)
+
+
 def has_stream(info: dict[str, Any], codec_type: str) -> bool:
     return any(s.get("codec_type") == codec_type for s in info["streams"])
 

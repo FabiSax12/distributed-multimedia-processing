@@ -175,7 +175,7 @@ def metadata(
         [out],
         {
             "format": data["format"],
-            "duration_s": data["duration_s"],
+            "duration_ms": ffmpeg.ms(data["duration_s"]),
             "catalog_match": catalog_match,
         },
     )

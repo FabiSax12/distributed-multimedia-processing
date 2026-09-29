@@ -43,7 +43,7 @@ def audio_convert(
         [out],
         {
             "target_format": fmt,
-            "duration_s": duration,
+            "duration_ms": ffmpeg.ms(duration),
             "size_bytes": out.stat().st_size,
         },
     )

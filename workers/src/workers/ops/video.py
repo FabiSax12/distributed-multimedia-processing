@@ -53,7 +53,7 @@ def video_convert(
         [out],
         {
             "target_format": fmt,
-            "duration_s": duration,
+            "duration_ms": ffmpeg.ms(duration),
             "size_bytes": out.stat().st_size,
         },
     )
@@ -81,7 +81,11 @@ def audio_extract(
     )
     return OpOutput(
         [out],
-        {"audio_format": fmt, "duration_s": duration, "size_bytes": out.stat().st_size},
+        {
+            "audio_format": fmt,
+            "duration_ms": ffmpeg.ms(duration),
+            "size_bytes": out.stat().st_size,
+        },
     )
 
 
@@ -105,4 +109,4 @@ def video_thumbnail(
          "-vf", f"scale={width}:-2", "-q:v", "3", str(out)],
         timeout_s=timeout_s,
     )  # fmt: skip
-    return OpOutput([out], {"at_s": round(at, 2), "width": width})
+    return OpOutput([out], {"at_ms": ffmpeg.ms(at), "width": width})
