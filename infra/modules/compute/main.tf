@@ -176,8 +176,10 @@ resource "aws_instance" "worker_metadatos" {
   }
 
   user_data = templatefile("${path.module}/templates/worker.sh.tftpl", merge(local.common_env_vars, {
-    pool           = "metadatos"
-    install_ffmpeg = false
+    pool = "metadatos"
+    # También necesita ffmpeg: la operación metadata usa ffprobe y POLL_ORDER
+    # lo pone a ayudar con audio-normal (audio_convert, image_thumbnail).
+    install_ffmpeg = true
   }))
 
   tags = {
