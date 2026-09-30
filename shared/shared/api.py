@@ -10,6 +10,7 @@ Endpoints previstos:
   GET    /api/cases/{case_id}      -> CaseDetailResponse
   DELETE /api/cases/{case_id}      -> CaseItem (cancel_requested = true)
   GET    /api/cases/{case_id}/report -> ReportUrlResponse
+  GET    /api/cases/{case_id}/outputs -> CaseOutputsResponse
   GET    /api/state                -> StateResponse   (polling cada 2 s)
 """
 
@@ -78,6 +79,29 @@ class ReportUrlResponse(BaseModel):
     case_id: str
     url: str                  # GET prefirmado del report.json
     expires_in: int
+
+
+class SubTaskOutputUrl(BaseModel):
+    key: str
+    url: str                  # GET prefirmado del archivo de salida
+    expires_in: int
+
+
+class SubTaskOutputs(BaseModel):
+    subtask_id: str
+    outputs: list[SubTaskOutputUrl]
+
+
+class CaseOutputsResponse(BaseModel):
+    """URLs prefirmadas de los `output_keys` de cada sub-tarea del caso.
+
+    A diferencia de `ReportUrlResponse`, no exige que el caso haya terminado:
+    una sub-tarea puede tener `output_keys` mientras el caso sigue en curso.
+    Solo incluye sub-tareas con al menos un `output_key`.
+    """
+
+    case_id: str
+    subtasks: list[SubTaskOutputs]
 
 
 # ---- Estado del sistema ----------------------------------------------------- #
