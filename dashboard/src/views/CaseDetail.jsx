@@ -19,16 +19,32 @@ const DETAIL_REFRESH_MS = 5000
 export default function CaseDetail({ caseId }) {
   const { data: live } = useLiveState()
   const [detail, setDetail] = useState(null)
+  const [outputs, setOutputs] = useState(null)
   const [error, setError] = useState(null)
 
   const load = useCallback(async () => {
-    try {
-      setDetail(await api.getCase(caseId))
+    // Independientes a propósito: /outputs es un extra sobre el detalle del
+    // caso, no debe tumbar una página que ya venía funcionando si falla solo
+    // esa llamada (throttling de DynamoDB, hiccup al presignar, etc.).
+    const [caseResult, outputsResult] = await Promise.allSettled([
+      api.getCase(caseId),
+      api.caseOutputs(caseId),
+    ])
+    if (caseResult.status === 'fulfilled') {
+      setDetail(caseResult.value)
       setError(null)
-    } catch (err) {
-      setError(err)
+    } else {
+      setError(caseResult.reason)
     }
+    if (outputsResult.status === 'fulfilled') setOutputs(outputsResult.value)
   }, [caseId])
+
+  // subtask_id -> lista de URLs prefirmadas de sus output_keys.
+  const outputsBySubtask = useMemo(() => {
+    const map = new Map()
+    for (const s of outputs?.subtasks ?? []) map.set(s.subtask_id, s.outputs)
+    return map
+  }, [outputs])
 
   useEffect(() => {
     setDetail(null)
@@ -61,7 +77,7 @@ export default function CaseDetail({ caseId }) {
       <CaseHeader c={detail.case} onChanged={load} />
       <Barrier c={detail.case} subtasks={detail.subtasks} />
       {terminal && <Report caseId={caseId} status={detail.case.status} />}
-      <SubTasks subtasks={detail.subtasks} />
+      <SubTasks subtasks={detail.subtasks} outputsBySubtask={outputsBySubtask} />
     </div>
   )
 }
@@ -164,7 +180,7 @@ function Barrier({ c, subtasks }) {
   )
 }
 
-function SubTasks({ subtasks }) {
+function SubTasks({ subtasks, outputsBySubtask }) {
   const [filter, setFilter] = useState('all')
 
   const groups = useMemo(() => {
@@ -221,7 +237,7 @@ function SubTasks({ subtasks }) {
                 </td>
               </tr>
               {list.map((s) => (
-                <SubTaskRow key={s.subtask_id} s={s} />
+                <SubTaskRow key={s.subtask_id} s={s} outputs={outputsBySubtask.get(s.subtask_id) ?? []} />
               ))}
             </tbody>
           ))}
@@ -231,7 +247,51 @@ function SubTasks({ subtasks }) {
   )
 }
 
-function SubTaskRow({ s }) {
+// Extensión -> tipo de preview inline. Cualquier otra extensión (metadata
+// JSON, etc.) se queda solo con el link de descarga.
+const PREVIEW_KIND = {
+  mp4: 'video', mkv: 'video', webm: 'video',
+  mp3: 'audio', wav: 'audio', ogg: 'audio', m4a: 'audio',
+  jpg: 'image', jpeg: 'image', png: 'image', webp: 'image',
+}
+
+function previewKind(key) {
+  return PREVIEW_KIND[key.split('.').pop()?.toLowerCase()] ?? null
+}
+
+// Descarga + preview inline (bajo un <details>, para no cargar de entrada
+// video/audio/imágenes pesados) de los output_keys de una sub-tarea. Las
+// URLs son prefirmadas (bucket privado) y vienen de GET /api/cases/{id}/outputs.
+function OutputFiles({ keys, outputs }) {
+  const byKey = useMemo(() => new Map(outputs.map((o) => [o.key, o])), [outputs])
+
+  return (
+    <span className="muted small outputs">
+      Salida:{' '}
+      {keys.map((k) => {
+        const output = byKey.get(k)
+        if (!output) return <code key={k}>{basename(k)}</code> // todavía sin URL prefirmada
+        const url = toDevS3Url(output.url)
+        const kind = previewKind(k)
+        return (
+          <span key={k} className="output-file">
+            <a href={url} download>{basename(k)}</a>
+            {kind && (
+              <details>
+                <summary>Ver</summary>
+                {kind === 'video' && <video controls src={url} />}
+                {kind === 'audio' && <audio controls src={url} />}
+                {kind === 'image' && <img src={url} alt={basename(k)} />}
+              </details>
+            )}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
+
+function SubTaskRow({ s, outputs }) {
   const running = s.status === 'running'
   return (
     <>
@@ -265,11 +325,7 @@ function SubTaskRow({ s }) {
                 <b>{ERROR_CODES[s.error.code] ?? s.error.code}:</b> {s.error.message}
               </span>
             )}
-            {s.output_keys.length > 0 && (
-              <span className="muted small">
-                Salida: {s.output_keys.map((k) => <code key={k}>{basename(k)}</code>)}
-              </span>
-            )}
+            {s.output_keys.length > 0 && <OutputFiles keys={s.output_keys} outputs={outputs} />}
           </td>
         </tr>
       )}

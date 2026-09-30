@@ -56,6 +56,7 @@ export const api = {
   createCase: (payload) => request('POST', '/api/cases', payload),
   cancelCase: (id) => request('DELETE', `/api/cases/${encodeURIComponent(id)}`),
   reportUrl: (id) => request('GET', `/api/cases/${encodeURIComponent(id)}/report`),
+  caseOutputs: (id) => request('GET', `/api/cases/${encodeURIComponent(id)}/outputs`),
   uploadUrls: (filenames) => request('POST', '/api/uploads', { filenames }),
 }
 
