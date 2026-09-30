@@ -14,16 +14,18 @@ from typing import Any
 
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException
-from ulid import ULID
-
 from shared.api import (
     CaseDetailResponse,
+    CaseOutputsResponse,
     CreateCaseRequest,
     CreateCaseResponse,
     ReportUrlResponse,
+    SubTaskOutputs,
+    SubTaskOutputUrl,
 )
 from shared.models import CaseItem, report_key
 from shared.states import TERMINAL_CASE, CaseStatus
+from ulid import ULID
 
 from ..barrier.finalize import finalize
 from ..repo.cases import CaseAlreadyTerminal, CaseNotFound
@@ -201,3 +203,43 @@ def get_case_report(
     return ReportUrlResponse(
         case_id=case_id, url=url, expires_in=settings.PRESIGN_EXPIRES_S
     )
+
+
+@router.get("/cases/{case_id}/outputs", response_model=CaseOutputsResponse)
+def get_case_outputs(
+    case_id: str,
+    settings: SettingsDep,
+    s3: S3Dep,
+    cases_repo: CasesRepoDep,
+    subtasks_repo: SubTasksRepoDep,
+) -> CaseOutputsResponse:
+    """Presigna los `output_keys` de cada sub-tarea, sin exigir que el caso haya terminado.
+
+    A diferencia de `get_case_report`, una sub-tarea individual puede tener
+    salidas listas mientras otras del mismo caso siguen procesándose.
+    """
+    case = cases_repo.get(case_id, consistent=True)
+    if case is None:
+        raise HTTPException(status_code=404, detail="caso no encontrado")
+
+    subtasks = subtasks_repo.query_by_case(case_id)
+    result = [
+        SubTaskOutputs(
+            subtask_id=s.subtask_id,
+            outputs=[
+                SubTaskOutputUrl(
+                    key=k,
+                    url=s3.generate_presigned_url(
+                        "get_object",
+                        Params={"Bucket": settings.RESULTS_BUCKET, "Key": k},
+                        ExpiresIn=settings.PRESIGN_EXPIRES_S,
+                    ),
+                    expires_in=settings.PRESIGN_EXPIRES_S,
+                )
+                for k in s.output_keys
+            ],
+        )
+        for s in subtasks
+        if s.output_keys
+    ]
+    return CaseOutputsResponse(case_id=case_id, subtasks=result)
