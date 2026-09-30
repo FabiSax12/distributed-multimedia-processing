@@ -27,6 +27,7 @@ import mimetypes
 import tempfile
 import threading
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -126,7 +127,7 @@ def handle_message(ctx: WorkerContext, queue_name: str, raw: dict[str, Any]) -> 
 
     try:
         with ctx.heartbeat.track(task.subtask_id):
-            output_keys, output_meta = _run(ctx, task, queue_name, attempt)
+            output_keys, output_meta = _run(ctx, task, queue_name, attempt, started_at)
         terminal = ctx.result(
             task,
             attempt,
@@ -161,7 +162,11 @@ def handle_message(ctx: WorkerContext, queue_name: str, raw: dict[str, Any]) -> 
 
 
 def _run(
-    ctx: WorkerContext, task: SubTaskMessage, queue_name: str, attempt: int
+    ctx: WorkerContext,
+    task: SubTaskMessage,
+    queue_name: str,
+    attempt: int,
+    started_at: datetime,
 ) -> tuple[list[str], dict[str, Any]]:
     with tempfile.TemporaryDirectory(prefix="dmp-") as tmp:
         src = Path(tmp) / "in" / Path(task.input_key).name
@@ -176,9 +181,16 @@ def _run(
             nonlocal last
             if pct >= last + _PROGRESS_STEP:
                 last = pct
+                # `started_at` también acá: si el coordinador procesa este
+                # `running` antes que el `assigned`, descarta el `assigned` por
+                # `state_order` y solo le queda esta hora de inicio.
                 ctx.publish(
                     ctx.result(
-                        task, attempt, status=SubTaskStatus.RUNNING, progress=pct
+                        task,
+                        attempt,
+                        status=SubTaskStatus.RUNNING,
+                        progress=pct,
+                        started_at=started_at,
                     )
                 )
 

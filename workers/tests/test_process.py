@@ -110,6 +110,19 @@ def test_completed_subtask_uploads_outputs_and_deletes_message(aws, media) -> No
     assert _in_queue(aws, "audio-normal") == 0
 
 
+def test_running_carries_started_at(aws, media) -> None:
+    # SQS estándar puede entregarle al coordinador un `running` antes que el
+    # `assigned`; si el `running` no trae `started_at`, el `assigned` se
+    # descarta por `state_order` y la sub-tarea queda sin hora de inicio.
+    _enqueue(aws, make_task("audio_convert", "audio"), src=media["audio"])
+
+    handle_message(_ctx(aws), *_receive(aws))
+
+    results = _results(aws)
+    started = {r.started_at for r in results if r.status is not SubTaskStatus.COMPLETED}
+    assert len(started) == 1 and None not in started
+
+
 def test_cancelled_case_is_reported_without_processing(aws, media, monkeypatch) -> None:
     aws["dynamodb"].put_item(
         TableName=TABLE_CASES,
